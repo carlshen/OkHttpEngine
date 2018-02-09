@@ -3,11 +3,11 @@ package cn.finalteam.glue;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.loopj.android.http.FileAsyncHttpResponseHandler;
 import com.loopj.android.http.JsonHttpResponseHandler;
-
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import cz.msebera.android.httpclient.Header;
 import cz.msebera.android.httpclient.message.BasicHeader;
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -98,12 +97,12 @@ public class OkHttpEngine {
         } else {
             mHandler = new Handler(Looper.myLooper());
         }
+        if (responseHandler == null) {
+            return;
+        }
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (responseHandler == null) {
-                    return;
-                }
                 if (call == null) {
                     if (e == null) {
                         responseHandler.onFailure(400, null, "", null);
@@ -115,7 +114,7 @@ public class OkHttpEngine {
                 Request callRequest = call.request();
                 if (callRequest != null && callRequest.headers() != null && callRequest.headers().size() > 0) {
                     Headers headers = callRequest.headers();
-                    Header retHeader[] = new Header[headers.size()];
+                    BasicHeader retHeader[] = new BasicHeader[headers.size()];
                     for (int len = 0; len < headers.size(); len++) {
                         retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                     }
@@ -142,60 +141,72 @@ public class OkHttpEngine {
         } else {
             mHandler = new Handler(Looper.myLooper());
         }
-        mHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (responseHandler == null) {
-                    return;
-                }
-                String response_body = "";
-                if (response == null) {
+        if (responseHandler == null) {
+            return;
+        }
+        if (response == null) {
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
                     if (call == null) {
-                        responseHandler.onFailure(500, null, response_body, null);
+                        responseHandler.onFailure(500, null, "", null);
                     } else {
                         responseHandler.onFailure(500, null, call.toString(), null);
                     }
-                    return;
                 }
-                try {
-                    response_body = response.body().string();
-                    JSONObject body = new JSONObject(response_body);
-                    if (response.isSuccessful()) {
-                        Headers headers = response.headers();
-                        if (headers != null && headers.size() > 0) {
-                            Log.d(TAG, "onSuccessResult Headers size = " + headers.size());
-                            Header retHeader[] = new Header[headers.size()];
-                            for (int len = 0; len < headers.size(); len++) {
-                                retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
+            });
+        } else {
+            try {
+                final String response_body = response.body().string();
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            JSONObject body = new JSONObject(response_body);
+                            if (response.isSuccessful()) {
+                                Headers headers = response.headers();
+                                if (headers != null && headers.size() > 0) {
+                                    Log.d(TAG, "onSuccessResult Headers size = " + headers.size());
+                                    BasicHeader retHeader[] = new BasicHeader[headers.size()];
+                                    for (int len = 0; len < headers.size(); len++) {
+                                        retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
+                                    }
+                                    responseHandler.onSuccess(response.code(), retHeader, body);
+                                } else {
+                                    Log.d(TAG, "onSuccessResult Headers is null.");
+                                    responseHandler.onSuccess(response.code(), null, body);
+                                }
+                            } else {
+                                Headers headers = response.headers();
+                                if (headers != null && headers.size() > 0) {
+                                    Log.d(TAG, "onSuccessResult onFailure Headers size = " + headers.size());
+                                    BasicHeader retHeader[] = new BasicHeader[headers.size()];
+                                    for (int len = 0; len < headers.size(); len++) {
+                                        retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
+                                    }
+                                    responseHandler.onFailure(response.code(), retHeader, null, body);
+                                } else {
+                                    Log.d(TAG, "onSuccessResult onFailure Headers is null.");
+                                    responseHandler.onFailure(response.code(), null, null, body);
+                                }
                             }
-                            responseHandler.onSuccess(response.code(), retHeader, body);
-                        } else {
-                            Log.d(TAG, "onSuccessResult Headers is null.");
-                            responseHandler.onSuccess(response.code(), null, body);
+                            return;
+                        } catch (JSONException e) {
+                            e.printStackTrace();
                         }
-                    } else {
-                        Headers headers = response.headers();
-                        if (headers != null && headers.size() > 0) {
-                            Log.d(TAG, "onSuccessResult onFailure Headers size = " + headers.size());
-                            Header retHeader[] = new Header[headers.size()];
-                            for (int len = 0; len < headers.size(); len++) {
-                                retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
-                            }
-                            responseHandler.onFailure(response.code(), retHeader, null, body);
-                        } else {
-                            Log.d(TAG, "onSuccessResult onFailure Headers is null.");
-                            responseHandler.onFailure(response.code(), null, null, body);
-                        }
+                        responseHandler.onFailure(response.code(), null, response_body, null);
                     }
-                    return;
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-                responseHandler.onFailure(response.code(), null, response_body, null);
+                });
+            } catch (IOException e) {
+                e.printStackTrace();
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        responseHandler.onFailure(response.code(), null, "", null);
+                    }
+                });
             }
-        });
+        }
     }
 
     private void onFailResult(final Call call, final IOException e, final BaseAsyncHttpResponseHandler responseHandler) {
@@ -205,12 +216,12 @@ public class OkHttpEngine {
         } else {
             mHandler = new Handler(Looper.myLooper());
         }
+        if (responseHandler == null) {
+            return;
+        }
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (responseHandler == null) {
-                    return;
-                }
                 if (call == null) {
                     if (e == null) {
                         responseHandler.onFailure(400, null, "", null);
@@ -241,36 +252,50 @@ public class OkHttpEngine {
         } else {
             mHandler = new Handler(Looper.myLooper());
         }
-        mHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (responseHandler == null) {
-                    return;
-                }
-                if (response == null) {
+        if (responseHandler == null) {
+            return;
+        }
+        if (response == null) {
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
                     if (call == null) {
                         responseHandler.onFailure(500, null, "", null);
                     } else {
                         responseHandler.onFailure(500, null, call.toString(), null);
                     }
-                    return;
                 }
-                try {
-                    JSONObject body = new JSONObject(response.body().string());
-                    if (response.isSuccessful()) {
-                        responseHandler.onSuccess(response.code(), responseHandler.parseResponseObjects(body));
-                    } else {
-                        responseHandler.onFailure(response.code(), responseHandler.parseResponseObjects(body));
+            });
+        } else {
+            try {
+                final String response_body = response.body().string();
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            JSONObject body = new JSONObject(response_body);
+                            if (response.isSuccessful()) {
+                                responseHandler.onSuccess(response.code(), responseHandler.parseResponseObjects(body));
+                            } else {
+                                responseHandler.onFailure(response.code(), responseHandler.parseResponseObjects(body));
+                            }
+                            return;
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                        responseHandler.onFailure(response.code(), null);
                     }
-                    return;
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-                responseHandler.onFailure(response.code(), null);
+                });
+            } catch (IOException e) {
+                e.printStackTrace();
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        responseHandler.onFailure(response.code(), null);
+                    }
+                });
             }
-        });
+        }
     }
 
     private void onSyncFailResult(Request callRequest, Response response, BaseAsyncHttpResponseHandler responseHandler) {
@@ -340,7 +365,7 @@ public class OkHttpEngine {
             Headers headers = callRequest.headers();
             if (headers != null && headers.size() > 0) {
                 Log.d(TAG, "onSyncFailResult onFailure Headers size = " + headers.size());
-                Header retHeader[] = new Header[headers.size()];
+                BasicHeader retHeader[] = new BasicHeader[headers.size()];
                 for (int len = 0; len < headers.size(); len++) {
                     retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                 }
@@ -374,7 +399,7 @@ public class OkHttpEngine {
                 Headers headers = response.headers();
                 if (headers != null && headers.size() > 0) {
                     Log.d(TAG, "onSyncSuccessResult Headers size = " + headers.size());
-                    Header retHeader[] = new Header[headers.size()];
+                    BasicHeader retHeader[] = new BasicHeader[headers.size()];
                     for (int len = 0; len < headers.size(); len++) {
                         retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                     }
@@ -387,7 +412,7 @@ public class OkHttpEngine {
                 Headers headers = response.headers();
                 if (headers != null && headers.size() > 0) {
                     Log.d(TAG, "onSyncSuccessResult onFailure Headers size = " + headers.size());
-                    Header retHeader[] = new Header[headers.size()];
+                    BasicHeader retHeader[] = new BasicHeader[headers.size()];
                     for (int len = 0; len < headers.size(); len++) {
                         retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                     }
@@ -413,12 +438,12 @@ public class OkHttpEngine {
         } else {
             mHandler = new Handler(Looper.myLooper());
         }
+        if (responseHandler == null) {
+            return;
+        }
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (responseHandler == null) {
-                    return;
-                }
                 if (call == null) {
                     if (e == null) {
                         responseHandler.onFailure(400, null, new byte[1], null);
@@ -430,7 +455,7 @@ public class OkHttpEngine {
                     Request callRequest = call.request();
                     if (callRequest != null && callRequest.headers() != null && callRequest.headers().size() > 0) {
                         Headers headers = callRequest.headers();
-                        Header retHeader[] = new Header[headers.size()];
+                        BasicHeader retHeader[] = new BasicHeader[headers.size()];
                         for (int len = 0; len < headers.size(); len++) {
                             retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                         }
@@ -458,12 +483,12 @@ public class OkHttpEngine {
         } else {
             mHandler = new Handler(Looper.myLooper());
         }
+        if (responseHandler == null) {
+            return;
+        }
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (responseHandler == null) {
-                    return;
-                }
                 if (response == null) {
                     responseHandler.onFailure(500, null, null, responseHandler.getTargetFile());
                     return;
@@ -472,7 +497,7 @@ public class OkHttpEngine {
                     Headers headers = response.headers();
                     if (headers != null && headers.size() > 0) {
                         Log.d(TAG, "onSuccessResult Headers size = " + headers.size());
-                        Header retHeader[] = new Header[headers.size()];
+                        BasicHeader retHeader[] = new BasicHeader[headers.size()];
                         for (int len = 0; len < headers.size(); len++) {
                             retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                         }
@@ -485,7 +510,7 @@ public class OkHttpEngine {
                     Headers headers = response.headers();
                     if (headers != null && headers.size() > 0) {
                         Log.d(TAG, "onSuccessResult onFailure Headers size = " + headers.size());
-                        Header retHeader[] = new Header[headers.size()];
+                        BasicHeader retHeader[] = new BasicHeader[headers.size()];
                         for (int len = 0; len < headers.size(); len++) {
                             retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                         }
@@ -513,7 +538,7 @@ public class OkHttpEngine {
         } else {
             Headers headers = response.headers();
             if (headers != null && headers.size() > 0) {
-                Header retHeader[] = new Header[headers.size()];
+                BasicHeader retHeader[] = new BasicHeader[headers.size()];
                 for (int len = 0; len < headers.size(); len++) {
                     retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                 }
@@ -544,7 +569,7 @@ public class OkHttpEngine {
             Headers headers = response.headers();
             if (headers != null && headers.size() > 0) {
                 Log.d(TAG, "onSuccessResult Headers size = " + headers.size());
-                Header retHeader[] = new Header[headers.size()];
+                BasicHeader retHeader[] = new BasicHeader[headers.size()];
                 for (int len = 0; len < headers.size(); len++) {
                     retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                 }
@@ -557,7 +582,7 @@ public class OkHttpEngine {
             Headers headers = response.headers();
             if (headers != null && headers.size() > 0) {
                 Log.d(TAG, "onSuccessResult onFailure Headers size = " + headers.size());
-                Header retHeader[] = new Header[headers.size()];
+                BasicHeader retHeader[] = new BasicHeader[headers.size()];
                 for (int len = 0; len < headers.size(); len++) {
                     retHeader[len] = new BasicHeader(headers.name(len), headers.value(len));
                 }
@@ -619,8 +644,13 @@ public class OkHttpEngine {
     }
 
     public void get(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).header(ACCESSTOKEN, token).get().build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).get().build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).header(ACCESSTOKEN, token).get().build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -636,8 +666,13 @@ public class OkHttpEngine {
     }
 
     public void get(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).header(ACCESSTOKEN, token).get().build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).get().build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).header(ACCESSTOKEN, token).get().build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -757,8 +792,13 @@ public class OkHttpEngine {
     }
 
     public void get(Context context, String token, String url, Map<String, String> requestParams, final FileAsyncHttpResponseHandler responseHandler) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).header(ACCESSTOKEN, token).get().build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).get().build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).url(Utils.getFullUrl(url, requestParams)).header(ACCESSTOKEN, token).get().build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -852,8 +892,13 @@ public class OkHttpEngine {
     }
 
     public void post(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).post(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(final Call call, final IOException e) {
@@ -869,8 +914,13 @@ public class OkHttpEngine {
     }
 
     public void post(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).post(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -900,8 +950,13 @@ public class OkHttpEngine {
     }
 
     public void post(Context context, String token, String url, Map<String, String> requestParams, final BaseAsyncHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).post(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -931,8 +986,13 @@ public class OkHttpEngine {
     }
 
     public void post(Context context, String token, String url, MultipartBody requestParams, final JsonHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(requestParams).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).post(requestParams).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).post(requestParams).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -1008,8 +1068,13 @@ public class OkHttpEngine {
     }
 
     public void put(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).put(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).put(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).put(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(final Call call, final IOException e) {
@@ -1025,8 +1090,13 @@ public class OkHttpEngine {
     }
 
     public void put(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).put(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).put(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).put(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(final Call call, final IOException e) {
@@ -1055,8 +1125,13 @@ public class OkHttpEngine {
         }
     }
     public void put(Context context, String token, String url, MultipartBody requestParams, final JsonHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).put(requestParams).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).put(requestParams).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).put(requestParams).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(final Call call, final IOException e) {
@@ -1132,8 +1207,13 @@ public class OkHttpEngine {
     }
 
     public void delete(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).delete(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).delete(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).delete(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(final Call call, final IOException e) {
@@ -1149,8 +1229,13 @@ public class OkHttpEngine {
     }
 
     public void delete(Context context, String token, String url, Map<String, String> requestParams, final JsonHttpResponseHandler responseHandler, boolean async) {
-        headers = Headers.of(ACCESSTOKEN, token);
-        Request request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).delete(FormBody4Request(requestParams)).build();
+        Request request;
+        if (TextUtils.isEmpty(token)) {
+            request = new Request.Builder().tag(context).url(url).delete(FormBody4Request(requestParams)).build();
+        } else {
+            headers = Headers.of(ACCESSTOKEN, token);
+            request = new Request.Builder().tag(context).addHeader(ACCESSTOKEN, token).url(url).delete(FormBody4Request(requestParams)).build();
+        }
         Callback callback = new Callback() {
             @Override
             public void onFailure(final Call call, final IOException e) {
